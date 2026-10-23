@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="robots" content="noindex"/>
+<title>Rastreio integrativo</title>
+<style>
+:root{--wine:#8d3140;--wine-d:#64242f;--rose:#f9eeee;--border:#e8d7d5;--ink:#302b2d;--sub:#6c6266;--green:#26694b}
+*{box-sizing:border-box}body{margin:0;background:#f7f4f2;color:var(--ink);font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}main{max-width:820px;margin:auto;padding:24px 16px 68px}
+.header{background:linear-gradient(135deg,#6d2937,#a64451);border-radius:22px;padding:29px 24px;color:#fff}.eyebrow{text-transform:uppercase;letter-spacing:.12em;font-size:12px;font-weight:700;opacity:.84}.header h1{font-size:clamp(25px,4.5vw,34px);line-height:1.17;margin:10px 0 12px}.header p{margin:0;color:#fff1f2;font-size:14px}
+.notice{border:1px solid var(--border);background:#fff;border-radius:14px;padding:15px 18px;margin-top:16px;font-size:14px;color:#594e53}
+section{border:1px solid var(--border);border-radius:17px;background:#fff;margin-top:18px;overflow:hidden}.sectionhead{padding:17px 20px 14px;border-bottom:1px solid var(--border);display:flex;gap:12px}.sectionnum{flex:none;display:grid;place-items:center;background:var(--rose);color:var(--wine);font-weight:800;border-radius:9px;height:35px;width:35px;font-size:15px}.sectionhead h2{font-size:18px;margin:1px 0 3px}.sectionhead p{font-size:13px;color:var(--sub);margin:0}.content{padding:15px 20px 21px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:11px}.form-field{display:block;font-size:13px;color:#5d5357;font-weight:650}.form-field input,.form-field textarea{width:100%;font:inherit;font-size:16px;border:1px solid #d7cecc;padding:11px 12px;border-radius:10px;margin-top:6px;color:var(--ink)}.form-field textarea{min-height:76px;resize:vertical}
+.check-item{display:flex;gap:11px;cursor:pointer;padding:12px 7px;border-bottom:1px solid #f0e9e6;font-size:14px}.check-item:last-child{border-bottom:0}.check-item input{position:absolute;opacity:0;width:1px;height:1px}.sq{display:grid;place-items:center;width:24px;height:24px;border:2px solid #b9a5a6;border-radius:6px;flex:none;color:#fff;font:700 23px/1 Arial}.check-item input:checked+.sq{background:var(--wine);border-color:var(--wine)}.check-item input:checked+.sq:after{content:'×'}.check-item input:focus-visible+.sq{outline:3px solid #e6a2ae;outline-offset:2px}.check-item strong{color:var(--wine-d)}.descr{display:block;color:#494044;margin-top:2px}
+.minorhead{font-size:14px;margin:17px 0 6px;font-weight:750;color:var(--wine-d)}.symptom{border-bottom:1px solid #eee5e2;padding:14px 0}.symptom:last-child{border:0}.symptom strong{display:block;color:var(--wine-d);font-size:14px}.symptom .d{display:block;font-size:14px;margin:2px 0 9px}
+.rating{display:flex;gap:8px}.chip{flex:1;cursor:pointer}.chip input{position:absolute;opacity:0;width:1px;height:1px}.chip span{display:grid;place-items:center;min-height:41px;border:1.5px solid #d8cbcb;border-radius:9px;font-weight:650;color:var(--sub)}.chip input:checked+span{background:var(--wine);color:#fff;border-color:var(--wine)}.chip input:focus-visible+span{outline:3px solid #e9a7b2}
+.legend{display:flex;justify-content:space-between;color:var(--sub);font-size:12px;margin-bottom:6px}
+.danger{border-left:4px solid #ba6656;background:#fff5f2;padding:12px 14px;font-size:13px;border-radius:6px;margin-top:18px;color:#65483f}
+.actions{margin-top:25px;padding:23px;background:#fff;border:1px solid var(--border);border-radius:17px}button{border:0;background:var(--wine);color:#fff;border-radius:10px;padding:14px;font-size:16px;font-weight:750;cursor:pointer;width:100%}button:disabled{opacity:.5;cursor:default}
+.status{font-size:14px;min-height:20px;padding-top:10px}.status.err{color:#a3372b}.full{text-align:center;padding:60px 20px}.full h2{color:var(--wine-d)}
+@media(max-width:520px){main{padding:12px 10px 48px}.grid{grid-template-columns:1fr 1fr}.content{padding:13px 15px 19px}}
+</style></head><body><main id="app"><div class="full"><p>Carregando questionário…</p></div></main>
+<script>
+(function(){'use strict';
+const API='https://afxorymftqndwcqswler.supabase.co/functions/v1/rastreio';
+const KEY='sb_publishable_4Jf5WFyFxOvXYuPO5Fwnbg_HFmPg2UK';
+const t=new URLSearchParams(location.search).get('t');
+const app=document.getElementById('app');
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const MSG={link_invalido:'Este link não é válido. Peça um novo link à clínica.',ja_respondido:'Este questionário já foi respondido. Obrigada!',expirado:'Este link expirou. Peça um novo link à clínica.'};
+const tela=(h,p)=>{app.innerHTML=`<div class="full"><h2>${h}</h2><p>${p}</p></div>`};
+const sec=(n,h,p,body)=>`<section><div class="sectionhead"><div class="sectionnum">${String(n).padStart(2,'0')}</div><div><h2>${h}</h2><p>${p}</p></div></div><div class="content">${body}</div></section>`;
+const checks=b=>b.itens.map(i=>`<label class="check-item"><input type="checkbox" data-bloco="${b.id}" value="${i.id}"><span class="sq" aria-hidden="true"></span><span><strong>${esc(i.titulo)}</strong>${i.texto?`<span class="descr">${esc(i.texto)}</span>`:''}</span></label>`).join('');
+
+function render(c){
+  const B=Object.fromEntries(c.blocos.map(b=>[b.id,b]));
+  const hoje=new Date().toISOString().slice(0,10);
+  const sint=c.sintomas.map(s=>`<div class="symptom"><strong>${esc(s.titulo)}</strong><span class="d">${esc(s.texto)}</span><div class="rating" role="radiogroup" aria-label="${esc(s.titulo)}">${[0,1,2,3,4].map(v=>`<label class="chip"><input type="radio" name="s_${s.id}" value="${v}"><span>${v}</span></label>`).join('')}</div></div>`).join('');
+  app.innerHTML=`<header class="header"><div class="eyebrow">Formulário para paciente</div><h1>Rastreio integrativo de hábitos e sintomas</h1><p>Olá, ${esc(c.paciente_nome.split(' ')[0])}! Marque um X nas afirmações que descrevem sua realidade. Nas escalas, selecione o número correspondente ao seu incômodo.</p></header>
+<div class="notice">Leva cerca de 10 minutos. Ao final, clique em <strong>Enviar respostas</strong>: elas chegam direto à sua profissional, com segurança. Este link serve para um único envio.</div>
+<form id="f">
+${sec(1,'Identificação','Informações básicas',`<div class="grid"><label class="form-field">Idade<input id="idade" type="number" min="1" max="119" inputmode="numeric"></label><label class="form-field">Data<input id="data" type="date" value="${hoje}"></label></div><div style="margin-top:13px"><label class="form-field">Principal queixa ou objetivo da avaliação (opcional)<textarea id="queixa" maxlength="2000"></textarea></label></div>`)}
+${sec(2,B.rotina.titulo,'Assinale todas as situações que fazem parte da sua rotina',checks(B.rotina))}
+${sec(3,'A — Alimentação','Visão geral dos hábitos alimentares',`<div class="grid"><label class="form-field">Água (litros/dia)<input id="agua" inputmode="decimal" placeholder="Ex.: 1,5" maxlength="20"></label><label class="form-field">Frutas/verduras (porções/dia)<input id="frutas" inputmode="numeric" placeholder="Ex.: 3" maxlength="20"></label><label class="form-field">Proteínas que costuma consumir<input id="proteinas" placeholder="Ex.: ovos, frango" maxlength="200"></label></div><h3 class="minorhead">Consumo frequente</h3>${checks(B.alim_consumo)}<h3 class="minorhead">Hábitos alimentares</h3>${checks(B.alim_habitos)}`)}
+${sec(4,'S — Sintomas sistêmicos','Avalie a intensidade do incômodo nos últimos 30 dias',`<div class="legend"><span>0 = ausente</span><span>4 = muito intenso</span></div>${sint}`)}
+${sec(5,'T — Saúde gastrointestinal','Marque as afirmações que se aplicam',`${checks(B.gi)}<h3 class="minorhead">Sinais e situações relacionados a sintomas fúngicos</h3>${checks(B.fungicos)}`)}
+${sec(6,B.hormonal.titulo,'Marque os grupos de sinais que ocorrem com frequência',checks(B.hormonal))}
+${sec(7,B.exposicoes.titulo,'Experiências, hábitos e exposições',checks(B.exposicoes))}
+${sec(8,'Observações adicionais','Espaço opcional',`<label class="form-field">Medicamentos em uso, condições de saúde conhecidas ou outras observações<textarea id="observacoes" maxlength="4000"></textarea></label><div class="danger"><strong>Atenção:</strong> sangue nas fezes, dor no peito ou desmaios devem ser avaliados por serviço de saúde. Este questionário não substitui avaliação clínica nem estabelece diagnósticos.</div>`)}
+<div class="actions"><label class="check-item" style="padding:0 0 16px"><input type="checkbox" id="consent"><span class="sq" aria-hidden="true"></span><span>Autorizo a Clínica Mayara Ribeiro a armazenar estas informações de saúde, de forma confidencial, para uso exclusivo na minha avaliação e acompanhamento (LGPD).</span></label><button type="submit" id="enviar">Enviar respostas</button><div id="st" class="status" role="status" aria-live="polite"></div></div>
+</form>`;
+  document.getElementById('f').addEventListener('submit',enviar);
+}
+
+async function enviar(ev){
+  ev.preventDefault();
+  const $=id=>document.getElementById(id), st=$('st');
+  if(!$('consent').checked){st.className='status err';st.textContent='Para enviar, marque a autorização acima do botão.';return;}
+  const marcados={};document.querySelectorAll('input[data-bloco]:checked').forEach(i=>(marcados[i.dataset.bloco]??=[]).push(i.value));
+  const sintomas={};document.querySelectorAll('.rating input:checked').forEach(i=>sintomas[i.name.slice(2)]=+i.value);
+  const faltam=document.querySelectorAll('.rating').length-Object.keys(sintomas).length;
+  if(faltam&&!confirm(`Faltam ${faltam} sintoma(s) sem nota de 0 a 4. Enviar mesmo assim?`))return;
+  const idade=parseInt($('idade').value,10);
+  const body={t,consentimento:true,marcados,sintomas,idade:Number.isInteger(idade)?idade:null,data:$('data').value||null,
+    queixa:$('queixa').value,agua:$('agua').value,frutas:$('frutas').value,proteinas:$('proteinas').value,observacoes:$('observacoes').value};
+  $('enviar').disabled=true;st.className='status';st.textContent='Enviando…';
+  try{
+    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json',apikey:KEY},body:JSON.stringify(body)});
+    const j=await r.json().catch(()=>({}));
+    if(r.ok&&j.ok){window.scrollTo(0,0);tela('Respostas enviadas ✓','Obrigada! Sua profissional já recebeu suas respostas e vai conversar com você sobre elas.');return;}
+    if(MSG[j.erro]){tela('Não foi possível enviar',MSG[j.erro]);return;}
+    throw new Error(j.erro||r.status);
+  }catch(e){$('enviar').disabled=false;st.className='status err';st.textContent='Não conseguimos enviar agora. Verifique sua internet e tente de novo — suas marcações continuam aqui.';}
+}
+
+(async()=>{
+  if(!t)return tela('Link incompleto',MSG.link_invalido);
+  try{
+    const r=await fetch(API+'?t='+encodeURIComponent(t),{headers:{apikey:KEY}});
+    const j=await r.json();
+    if(!r.ok)return tela('Questionário indisponível',MSG[j.erro]||'Tente novamente mais tarde.');
+    render(j);
+  }catch(e){tela('Sem conexão','Não foi possível carregar o questionário. Verifique sua internet e recarregue a página.');}
+})();
+})();
+</script></body></html>

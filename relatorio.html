@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="robots" content="noindex"/>
+<title>Rastreio — painel</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+:root{--wine:#8d3140;--wine-d:#64242f;--rose:#f9eeee;--border:#e8d7d5;--ink:#302b2d;--sub:#6c6266;--alert:#a3372b}
+*{box-sizing:border-box}body{margin:0;background:#f7f4f2;color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}main{max-width:1000px;margin:auto;padding:20px 16px 60px}
+h1{font-size:24px;margin:0 0 4px;color:var(--wine-d)}h2{font-size:17px;margin:0 0 12px}.sub{color:var(--sub);font-size:13px}
+.card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:18px;margin-top:16px}
+input,button{font:inherit}input{border:1px solid #d7cecc;border-radius:9px;padding:10px 11px}button{border:0;background:var(--wine);color:#fff;border-radius:9px;padding:10px 14px;font-weight:700;cursor:pointer}button.sec{background:#fff;color:var(--wine-d);border:1px solid #bd8a94}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row input{flex:1;min-width:180px}
+table{width:100%;border-collapse:collapse;font-size:14px}td,th{text-align:left;padding:9px 6px;border-bottom:1px solid #f0e9e6}th{color:var(--sub);font-weight:600;font-size:12px}tr.click{cursor:pointer}tr.click:hover{background:#fff8f8}
+.pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;font-weight:650}.ok{background:#e6f2ec;color:#26694b}.wait{background:#f3efe9;color:#7a6a55}.al{background:#fbe9e6;color:var(--alert)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}.alerta{border-left:4px solid var(--alert);background:#fff5f2;padding:10px 12px;border-radius:6px;margin-bottom:8px;color:#65483f}
+.bar{margin-bottom:12px}.bar .l{display:flex;justify-content:space-between;font-size:13px}.bar .t{height:10px;background:#f1e8e6;border-radius:5px;overflow:hidden;margin-top:4px}.bar .f{height:100%;background:var(--wine);border-radius:5px}
+.item{font-size:13px;padding:3px 0}.item.x{color:var(--ink)}.item.o{color:#b0a6a8}
+dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0;font-size:14px}dt{color:var(--sub)}dd{margin:0}
+.hide{display:none!important}#msg{font-size:13px;margin-top:8px}.foot{font-size:12px;color:var(--sub);margin-top:14px}
+@media(max-width:720px){.grid2{grid-template-columns:1fr}}
+@media print{body{background:#fff}.noprint{display:none!important}.card{break-inside:avoid;border-color:#ccc}main{padding:0}}
+</style></head><body><main>
+
+<div id="login" class="card hide" style="max-width:420px;margin:60px auto">
+  <h1>Rastreio integrativo</h1><p class="sub">Acesso restrito à equipe da clínica. Você receberá um link de entrada no seu e-mail.</p>
+  <form id="fl" class="row"><input id="email" type="email" required placeholder="seu e-mail" autocomplete="email"><button>Receber link</button></form>
+  <div id="msg"></div>
+</div>
+
+<div id="painel" class="hide">
+  <div class="row noprint" style="justify-content:space-between"><div><h1>Rastreio integrativo</h1><span class="sub" id="quem"></span></div><button class="sec" id="sair">Sair</button></div>
+  <div class="card noprint"><h2>Novo convite</h2>
+    <form id="fc" class="row"><input id="nome" required placeholder="Nome da paciente"><button>Gerar link</button></form>
+    <div id="novo" class="sub" style="margin-top:10px"></div>
+  </div>
+  <div class="card noprint"><h2>Pacientes</h2><table><thead><tr><th>Paciente</th><th>Convite</th><th>Situação</th><th>Alertas</th></tr></thead><tbody id="lista"></tbody></table></div>
+  <div id="rel"></div>
+</div>
+
+<script>
+(function(){'use strict';
+const sb=supabase.createClient('https://afxorymftqndwcqswler.supabase.co','sb_publishable_4Jf5WFyFxOvXYuPO5Fwnbg_HFmPg2UK');
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const dt=s=>s?new Date(s).toLocaleDateString('pt-BR'):'—';
+const linkDe=tk=>new URL('index.html?t='+tk,location.href).href;
+let convites=[], respostas=[];
+
+// Rotulos curtos para o relatorio. Os ids precisam bater com o catalogo da
+// Edge Function `rastreio`, que e quem decide o que pode ser gravado.
+const SINT=[['cabeca','Cabeça'],['respiratorio','Respiratório'],['pele','Pele/estética'],['cardio','Cardiovascular'],['dig_alto','Digestivo alto'],['dig_baixo','Digestivo baixo'],['fisico','Físico'],['energia','Energia'],['sono','Sono'],['emocional','Emocional/mental']];
+const ITENS={rotina:{sono:'Sono',descanso:'Descanso',estresse:'Estresse',trabalho:'Trabalho',ambiente:'Ambiente'},alim_consumo:{doces:'Doces',adocantes:'Adoçantes',processados:'Alimentos processados',frituras:'Frituras',alcool:'Álcool'},alim_habitos:{pula:'Pulo refeições',fome:'Fome intensa',doce_pos:'Doce após as refeições'},gi:{medicamentos:'Antibióticos/anti-inflamatórios frequentes',sinais_intestinais:'Muco/sangue nas fezes ou dor abdominal crônica',intolerancias:'Alergias/intolerâncias alimentares',diagnosticos:'Celíaca, Crohn, retocolite ou asma'},fungicos:{pele_mucosas:'Candidíase, coceira anal, fungos',gineco:'Pílula >2 anos, TPM intensa, endometriose',desejos:'Desejo intenso de doce/carboidrato/álcool',umidos:'Piora em ambientes úmidos/mofo',fermentados:'Intolerância a fermentados'},hormonal:{metabolismo:'Metabolismo',estresse_disp:'Estresse e disposição',pos_alimentacao:'Após alimentação',gineco:'Saúde ginecológica',sexual:'Saúde sexual/força'},exposicoes:{cheiros:'Cheiros',aditivos:'Aditivos',utensilios:'Utensílios (plástico, panelas riscadas)',produtos:'Cosméticos/medicamentos contínuos',odor:'Odor (hálito, urina)',ambiente:'Poluição, agrotóxicos, metais, fumaça'}};
+
+function radar(notas){
+  const W=340,C=170,R=120,n=SINT.length,ang=i=>-Math.PI/2+i*2*Math.PI/n,pt=(i,v)=>[C+Math.cos(ang(i))*R*v/4,C+Math.sin(ang(i))*R*v/4];
+  let g='';
+  for(let k=1;k<=4;k++)g+=`<polygon points="${SINT.map((_,i)=>pt(i,k).join(',')).join(' ')}" fill="none" stroke="#eadfdd"/>`;
+  SINT.forEach(([id,nome],i)=>{const [x,y]=pt(i,4),[lx,ly]=pt(i,5.05),v=notas[id];
+    g+=`<line x1="${C}" y1="${C}" x2="${x}" y2="${y}" stroke="#eadfdd"/><text x="${lx}" y="${ly}" font-size="11" text-anchor="${Math.abs(lx-C)<8?'middle':lx>C?'start':'end'}" dominant-baseline="middle" fill="${v>=3?'#a3372b':'#6c6266'}">${nome} ${v??'—'}</text>`;});
+  // Sem nota nao e zero: o ponto some do poligono e o rotulo mostra "—".
+  const pts=SINT.map(([id],i)=>notas[id]!=null?pt(i,notas[id]).join(','):null).filter(Boolean);
+  g+=`<polygon points="${pts.join(' ')}" fill="#8d314033" stroke="#8d3140" stroke-width="2"/>`;
+  SINT.forEach(([id],i)=>{if(notas[id]!=null){const [x,y]=pt(i,notas[id]);g+=`<circle cx="${x}" cy="${y}" r="3.5" fill="#8d3140"/>`}});
+  return `<svg viewBox="-60 0 ${W+120} ${W}" width="100%" role="img" aria-label="Radar dos sintomas">${g}</svg>`;
+}
+
+function relatorio(r){
+  const anteriores=respostas.filter(x=>x.paciente_nome===r.paciente_nome&&x.criado_em<r.criado_em).sort((a,b)=>b.criado_em.localeCompare(a.criado_em));
+  const ant=anteriores[0];
+  const comp=ant?`<table><thead><tr><th>Sintoma</th><th>${dt(ant.criado_em)}</th><th>${dt(r.criado_em)}</th><th></th></tr></thead><tbody>${SINT.map(([id,n])=>{const a=ant.sintomas[id],b=r.sintomas[id];const d=(a!=null&&b!=null)?b-a:null;return `<tr><td>${n}</td><td>${a??'—'}</td><td>${b??'—'}</td><td>${d==null?'':d<0?'▼ '+(-d):d>0?'▲ '+d:'='}</td></tr>`}).join('')}</tbody></table>`:'<p class="sub">Primeira resposta desta paciente. Quando ela responder de novo, a comparação aparece aqui.</p>';
+  const ord=['rotina','alim_consumo','alim_habitos','gi','fungicos','hormonal','exposicoes'];
+  const al=r.respostas.alimentacao||{};
+  $('rel').innerHTML=`
+<div class="card"><div class="row" style="justify-content:space-between"><div><h1>${esc(r.paciente_nome)}</h1><span class="sub">${r.idade?r.idade+' anos · ':''}respondido em ${dt(r.criado_em)}</span></div><button class="sec noprint" onclick="print()">Imprimir / PDF</button></div>
+${r.respostas.queixa?`<p><strong>Queixa/objetivo:</strong> ${esc(r.respostas.queixa)}</p>`:''}</div>
+${r.alertas.length?`<div class="card"><h2>Pontos para avaliar primeiro</h2>${r.alertas.map(a=>`<div class="alerta">${esc(a)}</div>`).join('')}</div>`:''}
+<div class="grid2">
+<div class="card"><h2>Sintomas sistêmicos (0–4, últimos 30 dias)</h2>${radar(r.sintomas)}</div>
+<div class="card"><h2>Itens marcados por bloco</h2>${ord.map(b=>{const c=r.contagens[b];return `<div class="bar"><div class="l"><span>${esc(c.titulo)}</span><strong>${c.marcados} de ${c.total}</strong></div><div class="t"><div class="f" style="width:${100*c.marcados/c.total}%"></div></div></div>`}).join('')}
+<dl style="margin-top:16px"><dt>Água</dt><dd>${esc(al.agua_litros??'não informado')}${al.agua_litros?' L/dia':''}</dd><dt>Frutas/verduras</dt><dd>${esc(al.frutas_porcoes??'não informado')}${al.frutas_porcoes?' porções/dia':''}</dd><dt>Proteínas</dt><dd>${esc(al.proteinas??'não informado')}</dd></dl></div>
+</div>
+<div class="card"><h2>Comparação com a resposta anterior</h2>${comp}</div>
+<div class="card"><h2>Respostas item a item</h2><div class="grid2">${ord.map(b=>`<div><h3 style="font-size:14px;color:var(--wine-d);margin:8px 0 4px">${esc(r.contagens[b].titulo)}</h3>${Object.entries(ITENS[b]).map(([id,n])=>{const x=(r.respostas.marcados[b]||[]).includes(id);return `<div class="item ${x?'x':'o'}">${x?'☒':'☐'} ${esc(n)}</div>`}).join('')}</div>`).join('')}</div>
+${r.respostas.observacoes?`<p style="margin-top:14px"><strong>Observações:</strong> ${esc(r.respostas.observacoes)}</p>`:''}
+<p class="foot">Instrumento de triagem autorreferida, sem pontuação diagnóstica validada. Contagens e notas descrevem o que a paciente marcou; não estabelecem diagnóstico. Sintoma sem nota aparece como “—”, não como zero.</p></div>`;
+  $('rel').scrollIntoView({behavior:'smooth'});
+}
+
+async function carregar(){
+  const [c,r]=await Promise.all([sb.from('rastreio_convites').select('*').order('criado_em',{ascending:false}),sb.from('rastreio_respostas').select('*').order('criado_em',{ascending:false})]);
+  if(c.error||r.error){$('lista').innerHTML=`<tr><td colspan="4">Erro ao carregar: ${esc((c.error||r.error).message)}</td></tr>`;return;}
+  convites=c.data;respostas=r.data;
+  if(!convites.length&&!respostas.length){$('lista').innerHTML='<tr><td colspan="4" class="sub">Nenhum convite ainda. Se você acabou de entrar e esperava ver dados, confirme se seu e-mail está na lista da equipe.</td></tr>';return;}
+  const porConvite=Object.fromEntries(respostas.map(x=>[x.convite_id,x]));
+  $('lista').innerHTML=convites.map(cv=>{const r=porConvite[cv.id];const venc=!r&&new Date(cv.expira_em)<new Date();
+    return `<tr class="${r?'click':''}" data-id="${r?r.id:''}"><td>${esc(cv.paciente_nome)}</td><td>${dt(cv.criado_em)}</td><td>${r?'<span class="pill ok">Respondido '+dt(r.criado_em)+'</span>':venc?'<span class="pill wait">Expirado</span>':`<span class="pill wait">Aguardando</span> <button class="sec noprint" style="padding:3px 8px;font-size:12px" data-copia="${cv.token}">Copiar link</button>`}</td><td>${r&&r.alertas.length?'<span class="pill al">'+r.alertas.length+'</span>':''}</td></tr>`}).join('');
+}
+
+$('lista').addEventListener('click',async e=>{
+  const tk=e.target.dataset?.copia;
+  if(tk){e.stopPropagation();await navigator.clipboard.writeText(linkDe(tk));e.target.textContent='Copiado ✓';return;}
+  const tr=e.target.closest('tr.click');if(tr)relatorio(respostas.find(x=>x.id===tr.dataset.id));
+});
+$('fc').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const {data,error}=await sb.from('rastreio_convites').insert({paciente_nome:$('nome').value.trim()}).select('token').single();
+  if(error){$('novo').textContent='Erro: '+error.message;return;}
+  const l=linkDe(data.token);
+  const txt=`Olá! Antes da sua avaliação, responda este questionário (leva uns 10 minutos): ${l}`;
+  $('novo').innerHTML=`Link criado (vale 30 dias, um envio):<br><input readonly value="${esc(l)}" style="width:100%;margin:6px 0"><div class="row"><button class="sec" id="cp">Copiar link</button><a class="sec" style="text-decoration:none;padding:10px 14px;border:1px solid #bd8a94;border-radius:9px;color:var(--wine-d)" target="_blank" href="https://wa.me/?text=${encodeURIComponent(txt)}">Enviar pelo WhatsApp</a></div>`;
+  $('cp').onclick=()=>navigator.clipboard.writeText(l).then(()=>$('cp').textContent='Copiado ✓');
+  $('nome').value='';carregar();
+});
+$('fl').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const {error}=await sb.auth.signInWithOtp({email:$('email').value.trim().toLowerCase(),options:{emailRedirectTo:location.href.split('#')[0]}});
+  $('msg').textContent=error?'Erro: '+error.message:'Pronto! Abra o link que enviamos para o seu e-mail.';
+});
+$('sair').onclick=()=>sb.auth.signOut();
+
+sb.auth.onAuthStateChange((_ev,s)=>{
+  $('login').classList.toggle('hide',!!s);$('painel').classList.toggle('hide',!s);
+  if(s){$('quem').textContent=s.user.email;carregar();}
+});
+})();
+</script></body></html>

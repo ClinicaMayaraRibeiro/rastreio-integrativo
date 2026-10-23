@@ -35,10 +35,10 @@ function render(c){
   const B=Object.fromEntries(c.blocos.map(b=>[b.id,b]));
   const hoje=new Date().toISOString().slice(0,10);
   const sint=c.sintomas.map(s=>`<div class="symptom"><strong>${esc(s.titulo)}</strong><span class="d">${esc(s.texto)}</span><div class="rating" role="radiogroup" aria-label="${esc(s.titulo)}">${[0,1,2,3,4].map(v=>`<label class="chip"><input type="radio" name="s_${s.id}" value="${v}"><span>${v}</span></label>`).join('')}</div></div>`).join('');
-  app.innerHTML=`<header class="header"><div class="eyebrow">Formulário para paciente</div><h1>Rastreio integrativo de hábitos e sintomas</h1><p>Olá, ${esc(c.paciente_nome.split(' ')[0])}! Marque um X nas afirmações que descrevem sua realidade. Nas escalas, selecione o número correspondente ao seu incômodo.</p></header>
-<div class="notice">Leva cerca de 10 minutos. Ao final, clique em <strong>Enviar respostas</strong>: elas chegam direto à sua profissional, com segurança. Este link serve para um único envio.</div>
+  app.innerHTML=`<header class="header"><div class="eyebrow">Formulário para paciente</div><h1>Rastreio integrativo de hábitos e sintomas</h1><p>${c.paciente_nome?`Olá, ${esc(c.paciente_nome.split(' ')[0])}! `:''}Marque um X nas afirmações que descrevem sua realidade. Nas escalas, selecione o número correspondente ao seu incômodo.</p></header>
+<div class="notice">Leva cerca de 10 minutos. Ao final, clique em <strong>Enviar respostas</strong>: elas chegam direto à sua profissional, com segurança.</div>
 <form id="f">
-${sec(1,'Identificação','Informações básicas',`<div class="grid"><label class="form-field">Idade<input id="idade" type="number" min="1" max="119" inputmode="numeric"></label><label class="form-field">Data<input id="data" type="date" value="${hoje}"></label></div><div style="margin-top:13px"><label class="form-field">Principal queixa ou objetivo da avaliação (opcional)<textarea id="queixa" maxlength="2000"></textarea></label></div>`)}
+${sec(1,'Identificação','Informações básicas',`${c.paciente_nome?'':'<label class="form-field" style="margin-bottom:11px">Nome completo *<input id="nome" required maxlength="120" autocomplete="name"></label><input id="site" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px">'}<div class="grid"><label class="form-field">Idade<input id="idade" type="number" min="1" max="119" inputmode="numeric"></label><label class="form-field">Data<input id="data" type="date" value="${hoje}"></label></div><div style="margin-top:13px"><label class="form-field">Principal queixa ou objetivo da avaliação (opcional)<textarea id="queixa" maxlength="2000"></textarea></label></div>`)}
 ${sec(2,B.rotina.titulo,'Assinale todas as situações que fazem parte da sua rotina',checks(B.rotina))}
 ${sec(3,'A — Alimentação','Visão geral dos hábitos alimentares',`<div class="grid"><label class="form-field">Água (litros/dia)<input id="agua" inputmode="decimal" placeholder="Ex.: 1,5" maxlength="20"></label><label class="form-field">Frutas/verduras (porções/dia)<input id="frutas" inputmode="numeric" placeholder="Ex.: 3" maxlength="20"></label><label class="form-field">Proteínas que costuma consumir<input id="proteinas" placeholder="Ex.: ovos, frango" maxlength="200"></label></div><h3 class="minorhead">Consumo frequente</h3>${checks(B.alim_consumo)}<h3 class="minorhead">Hábitos alimentares</h3>${checks(B.alim_habitos)}`)}
 ${sec(4,'S — Sintomas sistêmicos','Avalie a intensidade do incômodo nos últimos 30 dias',`<div class="legend"><span>0 = ausente</span><span>4 = muito intenso</span></div>${sint}`)}
@@ -54,13 +54,14 @@ ${sec(8,'Observações adicionais','Espaço opcional',`<label class="form-field"
 async function enviar(ev){
   ev.preventDefault();
   const $=id=>document.getElementById(id), st=$('st');
+  if($('nome')&&!$('nome').value.trim()){st.className='status err';st.textContent='Preencha seu nome no início do questionário.';$('nome').focus();return;}
   if(!$('consent').checked){st.className='status err';st.textContent='Para enviar, marque a autorização acima do botão.';return;}
   const marcados={};document.querySelectorAll('input[data-bloco]:checked').forEach(i=>(marcados[i.dataset.bloco]??=[]).push(i.value));
   const sintomas={};document.querySelectorAll('.rating input:checked').forEach(i=>sintomas[i.name.slice(2)]=+i.value);
   const faltam=document.querySelectorAll('.rating').length-Object.keys(sintomas).length;
   if(faltam&&!confirm(`Faltam ${faltam} sintoma(s) sem nota de 0 a 4. Enviar mesmo assim?`))return;
   const idade=parseInt($('idade').value,10);
-  const body={t,consentimento:true,marcados,sintomas,idade:Number.isInteger(idade)?idade:null,data:$('data').value||null,
+  const body={t,nome:$('nome')?.value,site:$('site')?.value,consentimento:true,marcados,sintomas,idade:Number.isInteger(idade)?idade:null,data:$('data').value||null,
     queixa:$('queixa').value,agua:$('agua').value,frutas:$('frutas').value,proteinas:$('proteinas').value,observacoes:$('observacoes').value};
   $('enviar').disabled=true;st.className='status';st.textContent='Enviando…';
   try{
@@ -73,9 +74,8 @@ async function enviar(ev){
 }
 
 (async()=>{
-  if(!t)return tela('Link incompleto',MSG.link_invalido);
   try{
-    const r=await fetch(API+'?t='+encodeURIComponent(t),{headers:{apikey:KEY}});
+    const r=await fetch(t?API+'?t='+encodeURIComponent(t):API,{headers:{apikey:KEY}});
     const j=await r.json();
     if(!r.ok)return tela('Questionário indisponível',MSG[j.erro]||'Tente novamente mais tarde.');
     render(j);
